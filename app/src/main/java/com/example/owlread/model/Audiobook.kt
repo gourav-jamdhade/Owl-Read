@@ -10,7 +10,7 @@ data class Audiobook(
     val url_rss: String?,
     val url_image: String?,
     @SerializedName("totaltime") val totaltime: String?,
-    val sections: List<Chapter>
+
 )
 
 
@@ -22,11 +22,3 @@ data class Author(
     val fullName: String
         get() = "$first_name $last_name"
 }
-
-
-data class Chapter(
-    val id: Int,
-    val title: String?,
-    val url: String
-
-)

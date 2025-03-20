@@ -7,7 +7,7 @@ import retrofit2.http.Query
 
 interface LibrivoxApiService {
 
-    @GET("feed/audiobooks/?format=json")
+    @GET("feed/audiobooks/?format=json&limit=10")
     suspend fun getAudiobooks(
 
         @Query("title") title: String? = "",
