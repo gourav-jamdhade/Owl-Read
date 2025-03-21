@@ -92,7 +92,7 @@ dependencies {
 
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation ("com.squareup.retrofit2:converter-simplexml:2.11.0")
+    implementation("com.squareup.retrofit2:converter-simplexml:2.11.0")
 
     implementation("io.coil-kt.coil3:coil-compose:3.1.0")
 
@@ -107,8 +107,16 @@ dependencies {
     val nav_version = "2.8.8"
 
     implementation("androidx.navigation:navigation-compose:$nav_version")
-    implementation ("com.github.bumptech.glide:compose:1.0.0-beta01")
+    implementation("com.github.bumptech.glide:compose:1.0.0-beta01")
 
+    // Paging 3
+    implementation("androidx.paging:paging-runtime:3.3.6")
+
+// For Jetpack Compose integration
+    implementation("androidx.paging:paging-compose:3.3.6")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
 
 
 }

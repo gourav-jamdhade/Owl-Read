@@ -14,11 +14,17 @@ class ChapterRepository {
 
     suspend fun getChaptersByAudiobookId(audiobookId: Int): Pair<String?, List<Chapter>?> {
         return try {
-            val response = RetrofitInstance.api.getAudiobooks()
+            Log.d("ChapterRepository", "Fetching chapters for audiobook ID: $audiobookId")
+            val response = RetrofitInstance.api.getAudiobookById(audiobookId)
             if (response.isSuccessful) {
-                val audiobook = response.body()?.books?.firstOrNull { it.id == audiobookId }
+                val audiobook = response.body()?.books?.firstOrNull()
+                Log.d("ChapterRepository", "Audio Title: ${response.body()}")
+                Log.d("ChapterRepository", "Audio Title: ${audiobook?.title}")
+                Log.d("ChapterRepository", "Audio Author: ${audiobook?.authors?.get(0)?.fullName}")
+
                 val rssUrl = audiobook?.url_rss
 
+                Log.d("ChapterRepository Successful", "RSS URL: $rssUrl")
                 if (!rssUrl.isNullOrEmpty()) {
                     getChapters(rssUrl)
                 } else {

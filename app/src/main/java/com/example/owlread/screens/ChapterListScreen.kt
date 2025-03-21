@@ -31,8 +31,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
@@ -60,18 +61,34 @@ fun ChapterListScreen(
     title: String,
     rssUrl: String,
     navController: NavController,
-    viewModel: ChapterViewModel = viewModel()
+    viewModelStoreOwner: ViewModelStoreOwner
 ) {
 
 
-    val chapters by viewModel.chapters.observeAsState(emptyList())
-    val imageUrl by viewModel.imageUrl.observeAsState(null)
-    val isLoading by viewModel.isLoading.observeAsState(false)
-    val errorMessage by viewModel.error.observeAsState(null)
+    val viewModel: ChapterViewModel = viewModel(viewModelStoreOwner)
 
-    LaunchedEffect(rssUrl) {
-        viewModel.fetchChapters(rssUrl)
+    val chapters by viewModel.chapters.collectAsState()
+    val imageUrl by viewModel.imageUrl.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.error.collectAsState()
+
+
+
+    LaunchedEffect(audiobookId) {
+//        Log.d(
+//            "ChapterListScreen",
+//            "Clearing cache and fetching chapters for audiobook ID: $audiobookId"
+//        )
+//
+        try {
+            //viewModel.clearCache()
+            viewModel.fetchChaptersByAudiobookId(audiobookId)
+        }catch (e:Exception){
+            Log.d("ChapterListScreen Exception", "Error: ${e.message}")
+        }
+
     }
+
     Scaffold(topBar = {
         TopAppBar(
             title = {
@@ -108,6 +125,7 @@ fun ChapterListScreen(
                 }
             }
         } else if (errorMessage != null) {
+            // Show an error message if fetching chapters fails
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -117,46 +135,49 @@ fun ChapterListScreen(
             ) {
                 Text(errorMessage!!)
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { viewModel.fetchChapters(rssUrl) }) {
+                Button(onClick = { viewModel.fetchChaptersByAudiobookId(audiobookId) }) {
                     Text("Retry")
                 }
             }
-        } else {
+        } else if (chapters != null && chapters!!.isEmpty()) {
+            // Show a message if no chapters are available after fetching
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("No chapters available")
+            }
+        } else if (chapters != null) {
+            // Show the list of chapters
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                if (chapters?.isEmpty() == true) {
-                    items(7) {
-                        ChapterShimmerItem()
-                    }
-                } else {
-                    items(chapters!!) { chapter ->
-                        ChapterItem(chapter, imageUrl) {
-                            viewModel.selectChapter(chapter)
-                            val chapterIndex = chapters!!.indexOf(chapter)
-                            Log.d("ChapterListScreen", "Chapter Index: $chapterIndex")
-                            try {
-                                navController.navigate(
-                                    Screen.Player.createRoute(
-                                        audiobookId = audiobookId,
-                                        chapterIndex = chapterIndex
-                                    )
+                items(chapters!!) { chapter ->
+                    ChapterItem(chapter, imageUrl) {
+                        val chapterIndex = chapters!!.indexOf(chapter)
+                        Log.d("ChapterListScreen", "Selected Chapter Index: $chapterIndex")
+                        try {
+                            navController.navigate(
+                                Screen.Player.createRoute(
+                                    audiobookId = audiobookId,
+                                    chapterIndex = chapterIndex
                                 )
-                            } catch (e: Exception) {
-                                Log.e("ChapterListScreen", "Error navigating to Player: ${e}")
+                            ){
+                                popUpTo(Screen.Player.route) { inclusive = true }
                             }
-
+                        } catch (e: Exception) {
+                            Log.e("ChapterListScreen", "Error navigating to Player: ${e}")
                         }
                     }
+
                 }
-
-
             }
         }
-
-
     }
 }
 
@@ -186,7 +207,7 @@ fun ChapterItem(chapter: Chapter, imageUrl: String?, onClick: () -> Unit) {
 
         GlideImage(
             model = if (imageUrl.isNullOrEmpty()) {
-                painterResource(R.drawable.coverart_placeholder)
+                R.drawable.coverart_placeholder
             } else {
                 imageUrl
             },

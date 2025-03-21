@@ -8,9 +8,9 @@ import java.util.concurrent.TimeUnit
 object RssRetrofitInstance {
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS) // Connection timeout
-        .readTimeout(30, TimeUnit.SECONDS)    // Read timeout
-        .writeTimeout(30, TimeUnit.SECONDS)   // Write timeout
+        .connectTimeout(10, TimeUnit.SECONDS) // Reduced timeout for testing
+        .readTimeout(10, TimeUnit.SECONDS)    // Reduced timeout for testing
+        .writeTimeout(10, TimeUnit.SECONDS)   // Reduced timeout for testing
         .build()
 
     private val retrofit:Retrofit by lazy {

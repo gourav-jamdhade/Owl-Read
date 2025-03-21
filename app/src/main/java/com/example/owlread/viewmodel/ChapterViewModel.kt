@@ -1,12 +1,12 @@
 package com.example.owlread.viewmodel
 
 import android.util.Log
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.owlread.model.Chapter
 import com.example.owlread.repository.ChapterRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.net.SocketTimeoutException
@@ -14,40 +14,93 @@ import javax.net.ssl.SSLHandshakeException
 
 class ChapterViewModel : ViewModel() {
     private val repository = ChapterRepository()
-    private val _imageUrl = MutableLiveData<String?>()
-    val imageUrl: MutableLiveData<String?> get() = _imageUrl
+    private val _imageUrl = MutableStateFlow<String?>(null)
+    val imageUrl: StateFlow<String?> get() = _imageUrl
 
-    private val _chapters = MutableLiveData<List<Chapter>?>()
-    val chapters: LiveData<List<Chapter>?> get() = _chapters
+    private val _chapters = MutableStateFlow<List<Chapter>?>(null)
+    val chapters: StateFlow<List<Chapter>?> get() = _chapters
 
-    private val _selectedChapter = MutableLiveData<Chapter?>()
-    val selectedChapter: LiveData<Chapter?> get() = _selectedChapter
+    private val _selectedChapter = MutableStateFlow<Chapter?>(null)
+    //val selectedChapter: StateFlow<Chapter?> get() = _selectedChapter
 
-    private val _isLoading = MutableLiveData(false)
-    val isLoading: LiveData<Boolean> = _isLoading
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
 
-    private val _error = MutableLiveData<String?>(null)
-    val error: LiveData<String?> = _error
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
     private var currentIndex = -1
 
+    // Cache for chapters by audiobook ID
+    private val chaptersCache = mutableMapOf<Int, Pair<String?, List<Chapter>?>>()
+
+
 
     fun fetchChaptersByAudiobookId(audiobookId: Int) {
-        viewModelScope.launch {
-            val (imageUrl, chapterList) = repository.getChaptersByAudiobookId(audiobookId)
-            _imageUrl.postValue(imageUrl)
-            _chapters.postValue(chapterList)
+        // Reset state before fetching new chapters
 
-            if (!chapterList.isNullOrEmpty()) {
-                currentIndex = 0  // Set first chapter by default
-                _selectedChapter.postValue(chapterList[0])
+        if (chaptersCache.containsKey(audiobookId)) {
+            // Use cached chapters
+            try {
+                Log.d("ChapterViewModel", "Using cached chapters for audiobook ID: $audiobookId")
+                val (imageUrl, chapterList) = chaptersCache[audiobookId]!!
+                _imageUrl.value = imageUrl
+                _chapters.value = chapterList
+            }catch (e:Exception){
+                Log.d("ChapterViewModel Exception", "Error: ${e.message}")
             }
+
+
+        } else {
+
+            try {
+//                _imageUrl.value = null
+//                _chapters.value = null
+                _isLoading.value = true
+                viewModelScope.launch {
+                    Log.d("ChapterViewModel", "Fetching chapters for audiobook ID: $audiobookId")
+                    val (imageUrl, chapterList) = repository.getChaptersByAudiobookId(audiobookId)
+                    chaptersCache[audiobookId] = Pair(imageUrl, chapterList) // Cache the result
+                    Log.d(
+                        "ChapterViewModel",
+                        "fetchChaptersByAudiobookId: ${chaptersCache[audiobookId]?.second!![0].title}"
+                    )
+
+                    Log.d(
+                        "ChapterViewModel",
+                        "Chapters Cache Size: ${chaptersCache.size}"
+                    )
+                    Log.d("ChapterViewModel", "Cached chapters for audiobook ID: $audiobookId")
+                    _imageUrl.value = imageUrl
+                    _chapters.value = chapterList
+                    _isLoading.value = false
+
+
+                    if (!chapterList.isNullOrEmpty()) {
+                        currentIndex = 0
+                        _selectedChapter.value = chapterList[0]
+                    }
+                }
+            }catch (e:Exception){
+                Log.d("ChapterViewModel Exception", "Error: ${e.message}")
+            }
+
+
         }
+    }
+
+    fun clearCache() {
+        chaptersCache.clear()
+        _imageUrl.value = null
+        _chapters.value = null
+        _isLoading.value = false
+        _error.value = null
     }
 
 
     fun fetchChapters(rssUrl: String) {
         viewModelScope.launch {
+
             _isLoading.value = true
             _error.value = null // Clear previous errors
             try {
@@ -71,6 +124,7 @@ class ChapterViewModel : ViewModel() {
 
         }
     }
+
 
     fun selectChapter(chapter: Chapter) {
 
@@ -96,31 +150,53 @@ class ChapterViewModel : ViewModel() {
 
     }
 
-    fun skipNext() {
-        Log.d("ChapterViewModel", "skiNext called")
-        val chapterList = _chapters.value
-        if (chapterList != null && currentIndex in 0 until chapterList.size - 1) {
-            currentIndex++
-            _selectedChapter.postValue(chapterList[currentIndex])
-        } else {
-            Log.d("ChapterViewModel", "Skip Next: Reached the last chapter or invalid index")
+    // Helper function to get the next chapter
+    fun getNextChapter(currentIndex: Int): Chapter? {
+        return chapters.value?.let { chapters ->
+            if (currentIndex < chapters.size - 1) {
+                chapters[currentIndex + 1]
+            } else {
+                null
+            }
         }
-
-        Log.d("ChapterViewModel next", "Current Index: $currentIndex")
     }
 
-    fun skipPrevious() {
-        Log.d("ChapterViewModel", "skipPrevious called")
-        if (currentIndex > 0) {
-            currentIndex--
-            _selectedChapter.postValue(_chapters.value?.get(currentIndex))
-        } else {
-            Log.d(
-                "ChapterViewModel",
-                "Skip Previous: Reached the first chapter or invalid index"
-            )
+    // Helper function to get the previous chapter
+    fun getPreviousChapter(currentIndex: Int): Chapter? {
+        return chapters.value?.let { chapters ->
+            if (currentIndex > 0) {
+                chapters[currentIndex - 1]
+            } else {
+                null
+            }
         }
-
-        Log.d("ChapterViewModel prev", "Current Index: $currentIndex")
     }
+
+//    fun skipNext() {
+//        Log.d("ChapterViewModel", "skiNext called")
+//        val chapterList = _chapters.value
+//        if (chapterList != null && currentIndex in 0 until chapterList.size - 1) {
+//            currentIndex++
+//            _selectedChapter.postValue(chapterList[currentIndex])
+//        } else {
+//            Log.d("ChapterViewModel", "Skip Next: Reached the last chapter or invalid index")
+//        }
+//
+//        Log.d("ChapterViewModel next", "Current Index: $currentIndex")
+//    }
+//
+//    fun skipPrevious() {
+//        Log.d("ChapterViewModel", "skipPrevious called")
+//        if (currentIndex > 0) {
+//            currentIndex--
+//            _selectedChapter.postValue(_chapters.value?.get(currentIndex))
+//        } else {
+//            Log.d(
+//                "ChapterViewModel",
+//                "Skip Previous: Reached the first chapter or invalid index"
+//            )
+//        }
+//
+//        Log.d("ChapterViewModel prev", "Current Index: $currentIndex")
+//    }
 }

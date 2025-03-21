@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -24,7 +25,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val navController = rememberNavController()
 
-            AppNavHost(navController)
+            AppNavHost(navController, viewModelStoreOwner = this)
         }
     }
 
@@ -33,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun AppNavHost(navController: NavHostController) {
+fun AppNavHost(navController: NavHostController,viewModelStoreOwner: ViewModelStoreOwner) {
     NavHost(navController = navController, startDestination = Screen.AudiobookList.route) {
         composable(Screen.AudiobookList.route) {
             AudiobookListScreen(navController)
@@ -53,7 +54,7 @@ fun AppNavHost(navController: NavHostController) {
             val bookTitle = backStackEntry.arguments?.getString("bookTitle") ?: "Unknown"
             val rssUrl = backStackEntry.arguments?.getString("rssUrl") ?: ""
 
-            ChapterListScreen(title = bookTitle, rssUrl = rssUrl, audiobookId = audiobookId, navController = navController)
+            ChapterListScreen(title = bookTitle, rssUrl = rssUrl, audiobookId = audiobookId, navController = navController, viewModelStoreOwner = viewModelStoreOwner)
         }
 
         composable(
@@ -69,7 +70,8 @@ fun AppNavHost(navController: NavHostController) {
             PlayerScreen(
                 audiobookId = audiobookId,
                 chapterIndex = chapterIndex,
-                navController = navController
+                navController = navController,
+                viewModelStoreOwner = viewModelStoreOwner
             )
         }
     }

@@ -10,6 +10,7 @@ data class Audiobook(
     val url_rss: String?,
     val url_image: String?,
     @SerializedName("totaltime") val totaltime: String?,
+    val totaltimesecs: Int // Add this field
 
 )
 

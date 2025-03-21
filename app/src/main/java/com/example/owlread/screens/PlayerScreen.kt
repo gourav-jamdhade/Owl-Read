@@ -35,8 +35,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,6 +50,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -70,10 +71,12 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(
     audiobookId: Int,
     chapterIndex: Int,
-    viewModel: ChapterViewModel = viewModel(),
-    navController: NavController
+    //viewModel: ChapterViewModel = viewModel(),
+    navController: NavController,
+    viewModelStoreOwner: ViewModelStoreOwner
 ) {
 
+    val viewModel: ChapterViewModel = viewModel(viewModelStoreOwner)
 
     val context = LocalContext.current
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -101,13 +104,22 @@ fun PlayerScreen(
         }
     }.build()
 
-    val imageUrl by viewModel.imageUrl.observeAsState(null)
+    val imageUrl by viewModel.imageUrl.collectAsState()
+    val chapters by viewModel.chapters.collectAsState()
+    //val isLoading by viewModel.isLoading.collectAsState()
     // Fetch chapters when the screen loads
     LaunchedEffect(audiobookId) {
-        viewModel.fetchChaptersByAudiobookId(audiobookId)
+        if (chapters.isNullOrEmpty()) {
+            Log.d("PlayerScreen", "Fetching chapters for audiobook ID: $audiobookId")
+
+            viewModel.fetchChaptersByAudiobookId(audiobookId)
+        } else {
+            Log.d("PlayerScreen", "Using cached chapters for audiobook ID: $audiobookId")
+        }
+
     }
 
-    val chapters by viewModel.chapters.observeAsState()
+
     val selectedChapter = chapters?.getOrNull(chapterIndex)
 
     val title = selectedChapter?.title ?: "Unknown"
@@ -127,7 +139,7 @@ fun PlayerScreen(
                 CircularProgressIndicator(
                     color = Color.Black,
 
-                )
+                    )
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -150,24 +162,6 @@ fun PlayerScreen(
         val seconds = totalSeconds % 60
 
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
-    }
-
-    fun parseDuration(duration: String): Long {
-        val parts = duration.split(":")
-        return when (parts.size) {
-            3 -> { // Format: "HH:MM:SS"
-                val hours = parts[0].toLong()
-                val minutes = parts[1].toLong()
-                val seconds = parts[2].toLong()
-                (hours * 3600 + minutes * 60 + seconds) * 1000
-            }
-            2 -> { // Format: "MM:SS"
-                val minutes = parts[0].toLong()
-                val seconds = parts[1].toLong()
-                (minutes * 60 + seconds) * 1000
-            }
-            else -> 0L // Invalid format
-        }
     }
 
     Log.d("PlayerScreen", "Selected Chapter: $title")
@@ -196,6 +190,38 @@ fun PlayerScreen(
             val mediaItem = MediaItem.fromUri(audioUrl)
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
+        }
+    }
+
+    // Handle next chapter navigation
+    fun skipNext() {
+        val nextChapter = viewModel.getNextChapter(chapterIndex)
+        if (nextChapter != null) {
+            val nextIndex = chapterIndex + 1
+            navController.navigate(
+                Screen.Player.createRoute(
+                    audiobookId = audiobookId,
+                    chapterIndex = nextIndex
+                )
+            ) {
+                popUpTo(Screen.Player.route) { inclusive = true }
+            }
+        }
+    }
+
+    // Handle previous chapter navigation
+    fun skipPrevious() {
+        val previousChapter = viewModel.getPreviousChapter(chapterIndex)
+        if (previousChapter != null) {
+            val prevIndex = chapterIndex - 1
+            navController.navigate(
+                Screen.Player.createRoute(
+                    audiobookId = audiobookId,
+                    chapterIndex = prevIndex
+                )
+            ) {
+                popUpTo(Screen.Player.route) { inclusive = true }
+            }
         }
     }
 
@@ -447,18 +473,7 @@ fun PlayerScreen(
                     .padding(8.dp)
                     .weight(.1f)
                     .clickable {
-                        if (chapterIndex > 0) {
-                            navController.navigate(
-                                Screen.Player.createRoute(
-                                    audiobookId,
-                                    chapterIndex - 1
-                                )
-                            ) {
-                                popUpTo(Screen.Player.route) {
-                                    inclusive = true
-                                }
-                            }
-                        }
+                        skipPrevious()
 
                     }
             )
@@ -471,7 +486,6 @@ fun PlayerScreen(
                 },
                 onValueChangeFinished = {
                     val newPosition = (sliderPosition * durationMs).toLong()
-                    exoPlayer.seekTo(newPosition)
                     exoPlayer.seekTo(newPosition)
                 },
                 modifier = Modifier
@@ -499,18 +513,7 @@ fun PlayerScreen(
                     .padding(8.dp)
                     .weight(.1f)
                     .clickable {
-                        if (chapterIndex in 0 until (chapters?.size?.minus(1) ?: -1)) {
-                            navController.navigate(
-                                Screen.Player.createRoute(
-                                    audiobookId,
-                                    chapterIndex + 1
-                                )
-                            ) {
-                                popUpTo(Screen.Player.route) {
-                                    inclusive = true
-                                }
-                            }
-                        }
+                        skipNext()
 
 
                     }
@@ -519,9 +522,9 @@ fun PlayerScreen(
         }
 
     }
+
+
 }
-
-
 
 
 //@Preview(showBackground = true)
