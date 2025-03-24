@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Owl Read</string>
+    <string name="notification_channel_name">Audiobook Playback</string>
+    <string name="notification_channel_description">Notifications for audiobook playback controls</string>
 </resources>

@@ -1,9 +1,14 @@
+@file:Suppress("UNCHECKED_CAST")
+
 package com.example.owlread.screens
 
+import android.app.Application
+import android.content.ComponentName
 import android.content.Context
-import android.media.AudioFocusRequest
-import android.media.AudioManager
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Build
+import android.os.IBinder
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.BorderStroke
@@ -50,9 +55,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavController
@@ -60,6 +66,7 @@ import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
 import com.bumptech.glide.integration.compose.GlideImage
 import com.bumptech.glide.integration.compose.placeholder
 import com.example.owlread.R
+import com.example.owlread.media.AudioPlayerService
 import com.example.owlread.navigation.Screen
 import com.example.owlread.viewmodel.ChapterViewModel
 import kotlinx.coroutines.delay
@@ -71,41 +78,134 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(
     audiobookId: Int,
     chapterIndex: Int,
+    currentPosition: Long, // Add currentPosition as a parameter
     //viewModel: ChapterViewModel = viewModel(),
     navController: NavController,
     viewModelStoreOwner: ViewModelStoreOwner
 ) {
 
-    val viewModel: ChapterViewModel = viewModel(viewModelStoreOwner)
-
     val context = LocalContext.current
-    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    var isPlaying by remember { mutableStateOf(false) }
-
-
-    val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).apply {
-        setOnAudioFocusChangeListener { focusChange ->
-            when (focusChange) {
-                AudioManager.AUDIOFOCUS_LOSS -> {
-                    // Another app took focus permanently (e.g., phone call)
-                    isPlaying = false  // Pause playback
-                }
-
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    // Temporarily lost focus (e.g., notification sound)
-                    isPlaying = false  // Pause playback
-                }
-
-                AudioManager.AUDIOFOCUS_GAIN -> {
-                    // Regained focus after being lost
-                    isPlaying = true
-                }
+    val viewModel: ChapterViewModel = viewModel(
+        viewModelStoreOwner,
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return ChapterViewModel(context.applicationContext as Application) as T
             }
         }
-    }.build()
+    )
+
+
 
     val imageUrl by viewModel.imageUrl.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
+
+    var isPlaying by remember { mutableStateOf(false) }
+    var playbackPosition by remember { mutableStateOf(currentPosition) }  // Track progress
+    var service: AudioPlayerService? by remember { mutableStateOf(null) }
+
+// Bind to the service
+    val serviceConnection = remember {
+        object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                val localBinder = binder as AudioPlayerService.LocalBinder
+                service = localBinder.getService()
+
+                // Restore playback state after the service is connected
+                service?.let {
+                    it.seekTo(playbackPosition)
+                    if (isPlaying) {
+                        it.play()
+                    } else {
+                        it.pause()
+                    }
+                }
+
+                isPlaying = service?.isPlaying() ?: false
+                playbackPosition = service?.getCurrentPosition() ?: 0L
+
+                Log.d(
+                    "PlayerScreen",
+                    "Service connected: isPlaying=$isPlaying, position=$currentPosition"
+                )
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                service = null
+            }
+        }
+    }
+
+// Start and bind the service
+    LaunchedEffect(Unit) {
+        val audioUrl = chapters?.getOrNull(chapterIndex)?.enclosure?.url ?: ""
+        AudioPlayerService.startService(context, audioUrl, audiobookId, chapterIndex)
+        val intent = Intent(context, AudioPlayerService::class.java)
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    //val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    LaunchedEffect(service) {
+        while (true) {
+            playbackPosition = service?.getCurrentPosition() ?: 0L
+            delay(500)  // Update every half second
+        }
+    }
+
+    Log.d("PlayerScreen", "PlayerScreen currentPos: $playbackPosition")
+    Log.d("PlayerScreen", "PlayerScreen service currentPos: ${service?.getCurrentPosition()}")
+
+
+
+
+
+
+//    val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).apply {
+//        setOnAudioFocusChangeListener { focusChange ->
+//            when (focusChange) {
+//                AudioManager.AUDIOFOCUS_LOSS -> {
+//                    // Another app took focus permanently (e.g., phone call)
+//                    isPlaying = false  // Pause playback
+//                }
+//
+//                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+//                    // Temporarily lost focus (e.g., notification sound)
+//                    isPlaying = false  // Pause playback
+//                }
+//
+//                AudioManager.AUDIOFOCUS_GAIN -> {
+//                    // Regained focus after being lost
+//                    isPlaying = true
+//                }
+//            }
+//        }
+//    }.build()
+
+
+
+
+    // Unbind the service when the composable is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            context.unbindService(serviceConnection)
+        }
+    }
+
+    // Control playback
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            service?.play()
+        } else {
+            service?.pause()
+        }
+    }
+
+    // Update current position
+    LaunchedEffect(Unit) {
+        while (true) {
+            playbackPosition = service?.getCurrentPosition() ?: 0L
+            delay(500)
+        }
+    }
     //val isLoading by viewModel.isLoading.collectAsState()
     // Fetch chapters when the screen loads
     LaunchedEffect(audiobookId) {
@@ -154,6 +254,7 @@ fun PlayerScreen(
         return
     }
 
+
     // Format duration function
     fun formatTime(millis: Long): String {
         val totalSeconds = millis / 1000
@@ -168,30 +269,30 @@ fun PlayerScreen(
 
 
     //Exoplayer Builder
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build()
-    }
+//    val exoPlayer = remember {
+//        ExoPlayer.Builder(context).build()
+//    }
 
-    var currentPosition by remember { mutableStateOf(0L) }  // Track progress
 
     // Update progress continuously
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(service) {
         while (true) {
-            currentPosition = exoPlayer.currentPosition
+            playbackPosition = service?.getCurrentPosition() ?: 0
             delay(500)  // Update every half second
         }
     }
 
 
-    // Delay initialization until `audioUrl` is available
-    LaunchedEffect(chapters) {
-        if (chapters?.isNotEmpty() == true) {
-            Log.d("PlayerScreen Exoplayer", "Initializing audio: $audioUrl")
-            val mediaItem = MediaItem.fromUri(audioUrl)
-            exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.prepare()
-        }
-    }
+//    // Delay initialization until `audioUrl` is available
+//    LaunchedEffect(chapters) {
+//        if (chapters?.isNotEmpty() == true) {
+//            Log.d("PlayerScreen Exoplayer", "Initializing audio: $audioUrl")
+//            val mediaItem = MediaItem.fromUri(audioUrl)
+//            exoPlayer.setMediaItem(mediaItem)
+//            exoPlayer.prepare()
+//        }
+//    }
+
 
     // Handle next chapter navigation
     fun skipNext() {
@@ -201,7 +302,8 @@ fun PlayerScreen(
             navController.navigate(
                 Screen.Player.createRoute(
                     audiobookId = audiobookId,
-                    chapterIndex = nextIndex
+                    chapterIndex = nextIndex,
+                    currentPosition = 0
                 )
             ) {
                 popUpTo(Screen.Player.route) { inclusive = true }
@@ -217,7 +319,8 @@ fun PlayerScreen(
             navController.navigate(
                 Screen.Player.createRoute(
                     audiobookId = audiobookId,
-                    chapterIndex = prevIndex
+                    chapterIndex = prevIndex,
+                    currentPosition = 0
                 )
             ) {
                 popUpTo(Screen.Player.route) { inclusive = true }
@@ -228,72 +331,79 @@ fun PlayerScreen(
     // Continuously update progress
     var sliderPosition by remember { mutableStateOf(0f) }
     var durationMs by remember { mutableStateOf(1L) }
+
+
     // Update progress when the player updates
-    LaunchedEffect(Unit) {
-        exoPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                durationMs = exoPlayer.duration.coerceAtLeast(1L)
-            }
-        })
-    }
-
-    LaunchedEffect(Unit) {
-        exoPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) {
-                    isPlaying = false  // Change pause button to play
-
-                    // Auto-load next chapter if available
-                    if (chapterIndex in 0 until (chapters?.size?.minus(1) ?: -1)) {
-                        navController.navigate(
-                            Screen.Player.createRoute(
-                                audiobookId,
-                                chapterIndex + 1
-                            )
-                        ) {
-                            popUpTo(Screen.Player.route) { inclusive = true }
-                        }
-                    } else {
-                        Log.d("PlayerScreen", "No more chapters left.")
-                    }
-                }
-            }
-        })
+    LaunchedEffect(sliderPosition) {
+        Log.d("PlayerScreen AudioPlayerService", "Slider Position LauncedEffect: $sliderPosition")
+        durationMs = service?.getDuration() ?: 1L
     }
 
 
-    // Sync slider with playback progress
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            sliderPosition = (exoPlayer.currentPosition.toFloat() / durationMs)
+
+
+
+//    LaunchedEffect(Unit) {
+//        exoPlayer.addListener(object : Player.Listener {
+//            override fun onPlaybackStateChanged(state: Int) {
+//                if (state == Player.STATE_ENDED) {
+//                    isPlaying = false  // Change pause button to play
+//
+//
+//                    // Auto-load next chapter if available
+//                    if (chapterIndex in 0 until (chapters?.size?.minus(1) ?: -1)) {
+//                        navController.navigate(
+//                            Screen.Player.createRoute(
+//                                audiobookId,
+//                                chapterIndex + 1,
+//                                currentPosition = 0
+//                            )
+//                        ) {
+//                            popUpTo(Screen.Player.route) { inclusive = true }
+//                        }
+//                    } else {
+//                        Log.d("PlayerScreen", "No more chapters left.")
+//                    }
+//                }
+//            }
+//        })
+//    }
+
+
+// Sync slider with playback progress
+    LaunchedEffect(service?.isPlaying()) {
+        Log.d("PlayerScreen AudioPlayerService", "LaunchedEffect: $service")
+        while (service?.isPlaying() == true) {
+            sliderPosition = ((service?.getCurrentPosition()?.toFloat() ?: 0f) / durationMs)
+            Log.d("PlayerScreen AudioPlayerService", "Slider Position: $sliderPosition")
             delay(500)  // Update every 500ms
         }
     }
 
 
-    // Debugging: Print values
+// Debugging: Print values
     Log.d("PlayerScreen", "Title: ${title}, URL: ${audioUrl}, Duration: ${duration}")
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            val result = audioManager.requestAudioFocus(focusRequest)
-            if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                Log.d("PlayerScreen Exoplayer", "Playing audio: $audioUrl")
-                exoPlayer.play()
-            } else {
-                Log.e("PlayerScreen", "Audio focus request failed")
-            }
-        } else {
-            Log.d("PlayerScreen Exoplayer", "Pausing audio: $audioUrl")
-            exoPlayer.pause()
-        }
-    }
+//LaunchedEffect(isPlaying) {
+//    if (isPlaying) {
+//        val result = audioManager.requestAudioFocus(focusRequest)
+//        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+//            Log.d("PlayerScreen Exoplayer", "Playing audio: $audioUrl")
+//            //exoPlayer.play()
+//        } else {
+//            Log.e("PlayerScreen", "Audio focus request failed")
+//        }
+//    } else {
+//        Log.d("PlayerScreen Exoplayer", "Pausing audio: $audioUrl")
+//        //exoPlayer.pause()
+//    }
+//}
 
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer.release()
-            audioManager.abandonAudioFocusRequest(focusRequest)
-        }
-    }
+//DisposableEffect(Unit) {
+//    onDispose {
+//        //exoPlayer.release()
+//        audioManager.abandonAudioFocusRequest(focusRequest)
+//    }
+//}
 
     val speedOptions = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)  // Available speeds
     var selectedSpeed by remember { mutableStateOf(1f) }  // Default speed
@@ -347,7 +457,7 @@ fun PlayerScreen(
 
         Text(
             modifier = Modifier.padding(top = 8.dp),
-            text = "${formatTime(currentPosition)}/${duration.trimStart()}",
+            text = "${formatTime(playbackPosition)}/${duration.trimStart()}",
             style = TextStyle(
                 fontSize = MaterialTheme.typography.bodySmall.fontSize,
                 fontWeight = FontWeight.Bold,
@@ -366,7 +476,7 @@ fun PlayerScreen(
                     val currentIndx = speedOptions.indexOf(selectedSpeed)
                     val newIndex = (currentIndx + 1) % speedOptions.size
                     selectedSpeed = speedOptions[newIndex]
-                    exoPlayer.setPlaybackSpeed(selectedSpeed)
+                    service?.setPlaybackSpeed(selectedSpeed)
                 },
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 shape = RoundedCornerShape(10.dp)
@@ -404,7 +514,7 @@ fun PlayerScreen(
                     .padding(8.dp)
                     .weight(.1f)
                     .clickable {
-                        exoPlayer.seekBack()
+                        service?.seekBack()
                     }
             )
 
@@ -444,7 +554,7 @@ fun PlayerScreen(
                     .padding(8.dp)
                     .weight(.1f)
                     .clickable {
-                        exoPlayer.seekForward()
+                        service?.seekForward()
                     }
             )
 
@@ -486,7 +596,8 @@ fun PlayerScreen(
                 },
                 onValueChangeFinished = {
                     val newPosition = (sliderPosition * durationMs).toLong()
-                    exoPlayer.seekTo(newPosition)
+                    Log.d("PlayerScreen AudioPlayerService", "New Position: $newPosition")
+                    service?.seekTo(newPosition)
                 },
                 modifier = Modifier
                     .fillMaxWidth(.7f)

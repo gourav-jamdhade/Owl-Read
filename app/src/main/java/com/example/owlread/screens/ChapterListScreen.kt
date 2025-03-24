@@ -36,7 +36,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,7 +82,7 @@ fun ChapterListScreen(
         try {
             //viewModel.clearCache()
             viewModel.fetchChaptersByAudiobookId(audiobookId)
-        }catch (e:Exception){
+        } catch (e: Exception) {
             Log.d("ChapterListScreen Exception", "Error: ${e.message}")
         }
 
@@ -165,9 +164,10 @@ fun ChapterListScreen(
                             navController.navigate(
                                 Screen.Player.createRoute(
                                     audiobookId = audiobookId,
-                                    chapterIndex = chapterIndex
+                                    chapterIndex = chapterIndex,
+                                    currentPosition = 0
                                 )
-                            ){
+                            ) {
                                 popUpTo(Screen.Player.route) { inclusive = true }
                             }
                         } catch (e: Exception) {

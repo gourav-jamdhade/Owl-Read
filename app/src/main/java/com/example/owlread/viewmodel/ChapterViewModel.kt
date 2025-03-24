@@ -1,10 +1,14 @@
 package com.example.owlread.viewmodel
 
+import android.app.Application
+import android.content.Context
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.owlread.model.Chapter
 import com.example.owlread.repository.ChapterRepository
+import com.google.common.reflect.TypeToken
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -12,7 +16,7 @@ import retrofit2.HttpException
 import java.net.SocketTimeoutException
 import javax.net.ssl.SSLHandshakeException
 
-class ChapterViewModel : ViewModel() {
+class ChapterViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ChapterRepository()
     private val _imageUrl = MutableStateFlow<String?>(null)
     val imageUrl: StateFlow<String?> get() = _imageUrl
@@ -35,6 +39,41 @@ class ChapterViewModel : ViewModel() {
     private val chaptersCache = mutableMapOf<Int, Pair<String?, List<Chapter>?>>()
 
 
+    // Save chapters data to SharedPreferences
+    private fun saveChaptersToSharedPreferences(
+        audiobookId: Int,
+        imageUrl: String?,
+        chapters: List<Chapter>
+    ) {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences(
+            "chapters_data",
+            Context.MODE_PRIVATE
+        )
+        val json = Gson().toJson(chapters) // Convert chapters list to JSON
+        sharedPreferences.edit().apply {
+            putString("audiobook_$audiobookId", json)
+            putString("audiobook_${audiobookId}_imageUrl", imageUrl)
+            apply()
+        }
+    }
+
+    // Load chapters data from SharedPreferences
+    private fun loadChaptersFromSharedPreferences(audiobookId: Int): Pair<String?, List<Chapter>?> {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences(
+            "chapters_data",
+            Context.MODE_PRIVATE
+        )
+        val json = sharedPreferences.getString("audiobook_$audiobookId", null)
+        val imageUrl = sharedPreferences.getString("audiobook_${audiobookId}_imageUrl", null)
+        return if (json != null) {
+            val type = object : TypeToken<List<Chapter>>() {}.type
+            val chapters =
+                Gson().fromJson<List<Chapter>>(json, object : TypeToken<List<Chapter>>() {}.type)
+            Pair(imageUrl, chapters)
+        } else {
+            Pair(null, null)
+        }
+    }
 
     fun fetchChaptersByAudiobookId(audiobookId: Int) {
         // Reset state before fetching new chapters
@@ -46,47 +85,79 @@ class ChapterViewModel : ViewModel() {
                 val (imageUrl, chapterList) = chaptersCache[audiobookId]!!
                 _imageUrl.value = imageUrl
                 _chapters.value = chapterList
-            }catch (e:Exception){
+            } catch (e: Exception) {
                 Log.d("ChapterViewModel Exception", "Error: ${e.message}")
             }
 
 
         } else {
-
-            try {
+// Check SharedPreferences for saved chapters
+            val (savedImageUrl, savedChapters) = loadChaptersFromSharedPreferences(audiobookId)
+            if (savedChapters != null) {
+                Log.d("ChapterViewModel", "Using saved chapters for audiobook ID: $audiobookId")
+                _imageUrl.value = savedImageUrl
+                _chapters.value = savedChapters
+                chaptersCache[audiobookId] = Pair(savedImageUrl, savedChapters)
+            } else {
+                try {
 //                _imageUrl.value = null
 //                _chapters.value = null
-                _isLoading.value = true
-                viewModelScope.launch {
-                    Log.d("ChapterViewModel", "Fetching chapters for audiobook ID: $audiobookId")
-                    val (imageUrl, chapterList) = repository.getChaptersByAudiobookId(audiobookId)
-                    chaptersCache[audiobookId] = Pair(imageUrl, chapterList) // Cache the result
-                    Log.d(
-                        "ChapterViewModel",
-                        "fetchChaptersByAudiobookId: ${chaptersCache[audiobookId]?.second!![0].title}"
-                    )
+                    _isLoading.value = true
+                    viewModelScope.launch {
+                        Log.d(
+                            "ChapterViewModel",
+                            "Fetching chapters for audiobook ID: $audiobookId"
+                        )
+                        val (imageUrl, chapterList) = repository.getChaptersByAudiobookId(
+                            audiobookId
+                        )
+                        chaptersCache[audiobookId] = Pair(imageUrl, chapterList) // Cache the result
+                        if (chapterList != null) {
+                            saveChaptersToSharedPreferences(audiobookId, imageUrl, chapterList)
+                        } // Save to SharedPreferences
 
-                    Log.d(
-                        "ChapterViewModel",
-                        "Chapters Cache Size: ${chaptersCache.size}"
-                    )
-                    Log.d("ChapterViewModel", "Cached chapters for audiobook ID: $audiobookId")
-                    _imageUrl.value = imageUrl
-                    _chapters.value = chapterList
-                    _isLoading.value = false
+                        Log.d(
+                            "ChapterViewModel",
+                            "fetchChaptersByAudiobookId: ${chaptersCache[audiobookId]?.second!![0].title}"
+                        )
+
+                        Log.d(
+                            "ChapterViewModel",
+                            "Chapters Cache Size: ${chaptersCache.size}"
+                        )
+                        Log.d("ChapterViewModel", "Cached chapters for audiobook ID: $audiobookId")
+                        _imageUrl.value = imageUrl
+                        _chapters.value = chapterList
+                        _isLoading.value = false
 
 
-                    if (!chapterList.isNullOrEmpty()) {
-                        currentIndex = 0
-                        _selectedChapter.value = chapterList[0]
+                        if (!chapterList.isNullOrEmpty()) {
+                            currentIndex = 0
+                            _selectedChapter.value = chapterList[0]
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.d("ChapterViewModel Exception", "Error: ${e.message}")
                 }
-            }catch (e:Exception){
-                Log.d("ChapterViewModel Exception", "Error: ${e.message}")
+
             }
 
 
         }
+    }
+
+    // Clear chapters data from SharedPreferences
+    fun clearChaptersData(audiobookId: Int) {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences(
+            "chapters_data",
+            Context.MODE_PRIVATE
+        )
+        sharedPreferences.edit().apply {
+            remove("audiobook_$audiobookId")
+            remove("audiobook_${audiobookId}_imageUrl")
+            apply()
+        }
+        chaptersCache.remove(audiobookId)
     }
 
     fun clearCache() {
@@ -171,32 +242,4 @@ class ChapterViewModel : ViewModel() {
             }
         }
     }
-
-//    fun skipNext() {
-//        Log.d("ChapterViewModel", "skiNext called")
-//        val chapterList = _chapters.value
-//        if (chapterList != null && currentIndex in 0 until chapterList.size - 1) {
-//            currentIndex++
-//            _selectedChapter.postValue(chapterList[currentIndex])
-//        } else {
-//            Log.d("ChapterViewModel", "Skip Next: Reached the last chapter or invalid index")
-//        }
-//
-//        Log.d("ChapterViewModel next", "Current Index: $currentIndex")
-//    }
-//
-//    fun skipPrevious() {
-//        Log.d("ChapterViewModel", "skipPrevious called")
-//        if (currentIndex > 0) {
-//            currentIndex--
-//            _selectedChapter.postValue(_chapters.value?.get(currentIndex))
-//        } else {
-//            Log.d(
-//                "ChapterViewModel",
-//                "Skip Previous: Reached the first chapter or invalid index"
-//            )
-//        }
-//
-//        Log.d("ChapterViewModel prev", "Current Index: $currentIndex")
-//    }
 }

@@ -34,12 +34,10 @@
         </activity>
 
         <service
-            android:name=".media.MediaPlayerService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
+            android:name=".media.AudioPlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
     </application>
 
 </manifest>

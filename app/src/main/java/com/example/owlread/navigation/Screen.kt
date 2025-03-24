@@ -12,9 +12,9 @@ sealed class Screen(val route: String) {
     }
 
 
-    object Player : Screen("player/{audiobookId}/{chapterIndex}") {
-        fun createRoute(audiobookId: Int, chapterIndex: Int) =
-            "player/$audiobookId/$chapterIndex"
+    object Player : Screen("player/{audiobookId}/{chapterIndex}/{currentPosition}") {
+        fun createRoute(audiobookId: Int, chapterIndex: Int, currentPosition: Long) =
+            "player/$audiobookId/$chapterIndex/$currentPosition"
     }
 
 
