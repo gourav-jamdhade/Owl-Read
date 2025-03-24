@@ -14,11 +14,11 @@ The app fetches audiobook from an API and uses pagination to list them. By click
 * Notification controls for playback and other functionalities.
 
 ### The player screen consist the following features
-1. The user can play pause the audiobook
-2. Next chapter will automatically start playing as soon as the current chapter ends.
-3. The user can control the playback speed, slider position to move the playback.
-4. The user can move to next or previous chapter.
-5. The user can seek the playback.
+* The user can play pause the audiobook
+* Next chapter will automatically start playing as soon as the current chapter ends.
+* The user can control the playback speed, slider position to move the playback.
+* The user can move to next or previous chapter.
+* The user can seek the playback.
 
 ## Technologies used
 
