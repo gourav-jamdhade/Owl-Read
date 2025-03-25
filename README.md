@@ -32,4 +32,9 @@ The app fetches audiobook from an API and uses pagination to list them. By click
 * Audio Focus
 
 ## Installation
+
 Clone the repository and import the project into Android Studio. The required dependencies are specified in the build.gradle files.
+
+
+https://github.com/user-attachments/assets/5dc1ecf8-920e-4ee0-b8c0-ee2aee1cfa4b
+
