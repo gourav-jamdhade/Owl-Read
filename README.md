@@ -27,7 +27,7 @@ The app fetches audiobook from an API and uses pagination to list them. By click
 * MVVM Architecture
 * Retrofit
 * Paging
-* Coil
+* Glide
 * Shared Preferences
 * Audio Focus
 
